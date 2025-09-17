@@ -1,0 +1,118 @@
+Created on Mon Aug 19 15:08:51 2024
+
+@author: onyem
+"""
+
+# Import libraries and set a random seed for reproducibility
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.model_selection import GridSearchCV
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+import os
+import random
+
+# Set environment seed for reproducibility across different libraries
+os.environ['PYTHONHASHSEED'] = '0'
+seed = 123
+random.seed(seed)
+np.random.seed(seed)
+
+# Load dataset (adjust the file path as needed: csv or excel)
+df = pd.read_excel(r"C:\Users\onyem\Desktop\Research Files\Second Paper\Data for Decomposition\Char1RLMD.xlsx")
+X = df.iloc[:, :-1]  # Features
+y = df.iloc[:, -1]   # Target
+
+# Optional: Standardize the data (uncomment if needed)
+# from sklearn.preprocessing import StandardScaler
+# scaler = StandardScaler()
+# X = scaler.fit_transform(X)
+
+# Split data into train and test sets
+n_test = 144
+X_train, X_test = X.iloc[:-n_test, :], X.iloc[-n_test:, :]
+y_train, y_test = y.iloc[:-n_test], y.iloc[-n_test:]
+
+# Initialize K-Nearest Neighbors Regressor and define grid search parameters
+KNN = KNeighborsRegressor()
+parameters = {
+    'n_neighbors': [2, 3, 4, 5],
+    #'n_neighbors': [2, 3] # Number of neighbors to consider. Lag6 uses the set[2,3]
+    'weights': ['uniform'], # Weight function ('uniform' or 'distance-based')
+    'algorithm': ['auto', 'ball_tree', 'kd_tree', 'brute'], # Algorithm to compute nearest neighbors
+    'leaf_size': [20, 30],          # Leaf size for tree-based algorithms
+    'p': [1, 2]                         # Power parameter for Minkowski distance (1 for Manhattan, 2 for Euclidean)
+}
+
+# Perform GridSearch with cross-validation
+KNN_grid = GridSearchCV(
+    KNN, parameters, cv=5, scoring="neg_mean_squared_error", n_jobs=-1, verbose=1
+)
+KNN_grid.fit(X_train, y_train)
+
+# Display Grid Search results
+print("Results from Grid Search:")
+print("Best estimator:", KNN_grid.best_estimator_)
+print("Best score (negative MSE):", KNN_grid.best_score_)
+print("Best parameters:", KNN_grid.best_params_)
+
+# Predictions for both train and test sets using the best estimator
+y_pred_best = KNN_grid.best_estimator_.predict(X_test)
+y_pred_besttr = KNN_grid.best_estimator_.predict(X_train)
+
+# Calculate and print performance metrics for train data
+r2_besttr = r2_score(y_train, y_pred_besttr)
+mse_besttr = mean_squared_error(y_train, y_pred_besttr)
+rmse_besttr = np.sqrt(mse_besttr)
+
+# Calculate and print performance metrics for test data
+r2_best = r2_score(y_test, y_pred_best)
+mae_best = mean_absolute_error(y_test, y_pred_best)
+mse_best = mean_squared_error(y_test, y_pred_best)
+rmse_best = np.sqrt(mse_best)
+
+# Output the results for both train and test sets
+print("Train Performance:")
+print(f"R2 score: {r2_besttr:.4f}, MSE: {mse_besttr:.4f}, RMSE: {rmse_besttr:.4f}")
+print("Test Performance:")
+print(f"R2 score: {r2_best:.4f}, MAE: {mae_best:.4f}, MSE: {mse_best:.4f}, RMSE: {rmse_best:.4f}")
+
+# Visualization function: Observed vs Modeled
+from scipy.stats import linregress
+from math import sqrt
+
+def plot_observed_vs_modeled(observed, modeled, title='Observed vs Modeled Data', save_file=None):
+    # Scatter plot
+    plt.scatter(observed, modeled, label='Observed vs Modeled', color='blue', s=4, alpha=0.7)
+
+    # Plot 1:1 line
+    plt.plot([min(observed), max(observed)], [min(observed), max(observed)], '--', color='red', label='1:1 Line')
+
+    # Plot best fit line
+    slope, intercept, r_value, p_value, std_err = linregress(observed, modeled)
+    line_label = f'Best Fit Line: y = {slope:.3f}x + {intercept:.3f}\nR = {r_value:.4f}'
+    plt.plot(observed, slope * np.array(observed) + intercept, color='red', label=line_label)
+
+    # Calculate and display RMSE
+    rmse = sqrt(mean_squared_error(observed, modeled))
+    plt.text(0.7, 0.1, f'RMSE = {rmse:.4f}', transform=plt.gca().transAxes, color='black')
+
+    # Set labels and title
+    plt.xlabel('Observed Data')
+    plt.ylabel('Modeled Data')
+    plt.title(title)
+
+    # Add legend
+    plt.legend()
+
+    # Save plot if filename is given
+    if save_file:
+        plt.savefig(save_file, dpi=300)
+
+    # Show plot
+    plt.show()
+
+# Plot results for test and train sets
+plot_observed_vs_modeled(y_test, y_pred_best, title='Observed vs Modeled (Test Data)', save_file='observed_vs_modeled_test.png')
+plot_observed_vs_modeled(y_train, y_pred_besttr, title='Observed vs Modeled (Train Data)', save_file='observed_vs_modeled_train.png')
