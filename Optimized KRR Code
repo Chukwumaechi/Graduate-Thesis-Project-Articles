@@ -1,0 +1,135 @@
+# Import libraries
+import numpy as np
+import pandas as pd
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+from sklearn.model_selection import KFold, cross_val_score
+import mealpy
+from sklearn.kernel_ridge import KernelRidge
+from sklearn.model_selection import train_test_split
+from mealpy.math_based.RUN import OriginalRUN
+np.random.seed(2021)
+# Load data
+# Load dataset (adjust the file path as needed: excel or csv)
+df = pd.read_excel(r"C:\Users\onyem\Desktop\Research Files\Second Paper\Data for Decomposition\Char1RLMD.xlsx")
+X = df.iloc[:, :-1]  # Features
+y = df.iloc[:, -1]   # Target
+
+# Optional: Standardize the data (uncomment if needed)
+# from sklearn.preprocessing import StandardScaler
+# scaler = StandardScaler()
+# X = scaler.fit_transform(X)
+
+# Split data into train and test sets
+n_test = 144
+X_train, X_test = X.iloc[:-n_test, :], X.iloc[-n_test:, :]
+y_train, y_test = y.iloc[:-n_test], y.iloc[-n_test:]
+
+# Define objective function
+
+# Define the objective function
+def objective_function(solution):
+    alpha, gamma = solution
+    model = KernelRidge(alpha=alpha, kernel='rbf', gamma=gamma) #change 'rbf' to linear
+    #model.fit(X_train, y_train)
+    #predictions = model.predict(X_test)
+    #mse = mean_squared_error(y_test, predictions)
+   # return mse
+    cv = KFold(n_splits=5)
+    scores = cross_val_score(model, X_train, y_train, cv=cv, scoring='neg_mean_squared_error')
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    mse = mean_squared_error(y_test, y_pred)
+    # Predict and evaluate on test set
+  
+    
+    # Return negative mse as fitness value
+    #return -scores.mean()
+    return mse
+# Define the problem
+problem_dict = {
+    "fit_func": objective_function,
+    "lb": [0.000001, 0.000001],  # Lower bounds for alpha and gamma
+    "ub": [1, 1],                # Upper bounds for alpha and gamma
+    "minmax": "min",
+    "verbose": True,
+}
+
+
+epoch = 100
+pop_size = 10
+#model = OriginalRUN(epoch, pop_size)
+model = mealpy.swarm_based.SCSO.OriginalSCSO(epoch, pop_size)
+#model = mealpy.swarm_based.EHO.OriginalEHO(epoch, pop_size, alpha =0.5, beta =0.5,  n_clans = 2 )
+#model = mealpy.bio_based.SBO.OriginalSBO(epoch, pop_size, alpha = 0.90, p_m=0.05, psw = 0.02)
+#model = mealpy.swarm_based.GOA.OriginalGOA(epoch, pop_size, c_min = 0.00004, c_max = 1.0)
+#model = mealpy.human_based.BRO.OriginalBRO(epoch, pop_size, threshold = 3)
+#model = mealpy.human_based.CHIO.OriginalCHIO(epoch, pop_size, brr = 0.15, max_age = 10)
+#model = mealpy.human_based.FBIO.OriginalFBIO(epoch, pop_size)  # Best
+#model = mealpy.evolutionary_based.GA.BaseGA(epoch, pop_size,pc=0.95,pm=0.025)
+#model = mealpy.evolutionary_based.FPA.OriginalFPA(epoch, pop_size, p_s= 0.8, levy_multiplier= 0.2 )
+#model = mealpy.physics_based.CDO.OriginalCDO(epoch, pop_size)
+best_position, best_fitness = model.solve(problem_dict)
+print(f"Solution: {best_position}, Fitness: {best_fitness}")
+# Print results
+print("Best position:", best_position)
+print("Best fitness:", best_fitness)
+# Best hyperparameters
+best_alpha, best_gamma = best_position
+print(f"Best solution: alpha = {best_alpha}, gamma = {best_gamma}")
+print(f"Best fitness (MSE): {best_fitness}")
+model_best = best_model = KernelRidge(alpha=best_alpha, kernel='rbf', gamma=best_gamma)
+model_best.fit(X_train, y_train)
+# Predict and evaluate on test set using different metrics
+y_pred_best = model_best.predict(X_test)
+y_pred_besttr = model_best.predict(X_train)
+r2_besttr = r2_score(y_train, y_pred_besttr)
+mse_besttr = mean_squared_error(y_train, y_pred_besttr)
+rmse_besttr=np.sqrt(mse_besttr)
+r2_best = r2_score(y_test, y_pred_best)
+mae_best = mean_absolute_error(y_test, y_pred_best)
+mse_best = mean_squared_error(y_test, y_pred_best)
+rmse_best=np.sqrt(mse_best)
+print("Best r2 score train:", r2_besttr)
+print("Best mean squared error train:", mse_besttr)
+print("Best root mean squared error train:", rmse_besttr)
+# Print results
+print("Best r2 score:", r2_best)
+print("Best mean absolute error:", mae_best)
+print("Best mean squared error:", mse_best)
+print("Best root mean squared error:", rmse_best)
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import linregress
+from sklearn.metrics import mean_squared_error
+from math import sqrt
+def plot_observed_vs_modeled(observed, modeled):
+    # Scatter plot
+    plt.scatter(observed, modeled, label='Observed vs Modeled', color='blue', s=4, alpha=0.7)
+
+    # 1:1 line
+    plt.plot([min(observed), max(observed)], [min(observed), max(observed)], linestyle='--', color='gray', label='1:1 Line')
+
+    # Best fit line
+    slope, intercept, r_value, p_value, std_err = linregress(observed, modeled)
+    line = f'Best Fit Line: y = {slope:.3f}x + {intercept:.3f}\nR = {r_value:.4f}'
+    plt.plot(observed, slope * np.array(observed) + intercept, color='red', label=line)
+
+    # Calculate RMSE
+    rmse = sqrt(mean_squared_error(observed, modeled))
+
+    # Display RMSE value
+    rmse_text = f'RMSE = {rmse:.4f}'
+    plt.text(0.7, 0.1, rmse_text, transform=plt.gca().transAxes, color='black')
+
+    # Set labels and title
+    plt.xlabel('Observed Data')
+    plt.ylabel('Modeled Data')
+    plt.title('Observed vs Modeled Data')
+
+    # Add legend
+    plt.legend()
+    plt.savefig('observed_vs_modeled.png', dpi=300)
+    # Show the plot
+    plt.show()      
+plot_observed_vs_modeled(y_test, y_pred_best)
+plot_observed_vs_modeled(y_train, y_pred_besttr)
