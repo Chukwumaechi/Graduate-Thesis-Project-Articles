@@ -1,0 +1,150 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.projections import PolarAxes
+import mpl_toolkits.axisartist.grid_finder as gf
+import mpl_toolkits.axisartist.floating_axes as fa
+
+class TaylorDiagram:
+    def __init__(self, obs_std, fig=None, rect=111, label='Observed', smax_factor=1.5):
+        """
+        Initializes the Taylor Diagram.
+        :param obs_std: Observed standard deviation.
+        :param fig: Matplotlib figure instance.
+        :param rect: Subplot position.
+        :param label: Label for the observed data.
+        :param smax_factor: Factor to determine the max range of the standard deviation axis.
+        """
+        self.obs_std = obs_std
+        self.smax = smax_factor * self.obs_std  # Dynamic max STD range
+
+        # Polar transformation for correlation coefficients
+        tr = PolarAxes.PolarTransform()
+        rlocs = np.concatenate(((np.arange(11.0) / 10.0), [0.95, 0.99]))
+        tlocs = np.arccos(rlocs)  # Convert to polar angles
+        gl1 = gf.FixedLocator(tlocs)
+        tf1 = gf.DictFormatter(dict(zip(tlocs, map(str, rlocs))))
+
+        # Grid helper for polar axes
+        gh = fa.GridHelperCurveLinear(
+            tr, extremes=(0, np.pi / 2, 0, self.smax), grid_locator1=gl1, tick_formatter1=tf1
+        )
+
+        # Set up figure and subplot
+        if fig is None:
+            fig = plt.figure()
+        ax = fa.FloatingSubplot(fig, rect, grid_helper=gh)
+        fig.add_subplot(ax)
+
+        # Configure axes
+        self._configure_axes(ax)
+
+        # Create polar coordinate system
+        self._ax = ax
+        self.ax = ax.get_aux_axes(tr)
+
+        # Add observed standard deviation marker and contour
+        self.sample_points = []
+        self._add_observed_point(label)
+
+    def _configure_axes(self, ax):
+        """
+        Configures the axes for the Taylor Diagram.
+        """
+        ax.axis['top'].set_axis_direction('bottom')
+        ax.axis['top'].label.set_text("Correlation Coefficient")
+        ax.axis['top'].toggle(ticklabels=True, label=True)
+
+        ax.axis['left'].set_axis_direction('bottom')
+        ax.axis['left'].label.set_text("Standard Deviation")
+        ax.axis['left'].toggle(ticklabels=True, label=True)
+
+        ax.axis['right'].set_axis_direction('top')
+        ax.axis['right'].label.set_text("Standard Deviation")
+        ax.axis['right'].toggle(ticklabels=True, label=True)
+
+        ax.axis['bottom'].set_visible(False)  # Disable bottom axis
+
+        ax.grid()
+
+    def _add_observed_point(self, label):
+        """
+        Adds the observed standard deviation point to the diagram.
+        """
+        obs_point, = self.ax.plot([0], [self.obs_std], 'r*', ms=10, label=label)  # Red star
+        self.sample_points.append(obs_point)
+
+    def add_sample(self, std, corr, *args, **kwargs):
+        """
+        Adds a sample point to the diagram.
+        :param std: Standard deviation of the sample.
+        :param corr: Correlation coefficient of the sample.
+        """
+        sample, = self.ax.plot(np.arccos(corr), std, *args, **kwargs)  # (theta, radius)
+        self.sample_points.append(sample)
+        return sample
+
+    def add_contours(self, levels=5, **kwargs):
+        """
+        Adds RMSE contours to the diagram.
+        :param levels: Number of contour levels.
+        """
+        rs, ts = np.meshgrid(np.linspace(0, self.smax), np.linspace(0, np.pi / 2))
+        rmse = np.sqrt(
+            self.obs_std**2 + rs**2 - 2 * self.obs_std * rs * np.cos(ts)
+        )  # RMSE formula
+        contours = self.ax.contour(ts, rs, rmse, levels, **kwargs)
+        return contours
+
+
+def plot_taylor_diagram(obs_std, stds, corrs, labels, output_file, title="Taylor Diagram"):
+    """
+    Plots a Taylor Diagram with given observed data, models, and parameters.
+    :param obs_std: Observed standard deviation.
+    :param stds: List of standard deviations for models.
+    :param corrs: List of correlation coefficients for models.
+    :param labels: List of labels for models.
+    :param output_file: Name of the output file.
+    :param title: Title of the diagram.
+    """
+    fig = plt.figure(figsize=(8, 8))
+    dia = TaylorDiagram(obs_std, fig=fig, rect=111, label='Observed', smax_factor=2.0)
+
+    # Add RMSE contours
+    dia.add_contours(levels=6, colors='0.5', linewidths=0.7)
+    plt.clabel(dia.add_contours(levels=6, colors='black', linewidths=0.5), inline=1, fontsize=10)
+
+    # Add model sample points
+    colors = plt.cm.Set1(np.linspace(0.1, 0.95, len(labels)))
+    for std, corr, label, color in zip(stds, corrs, labels, colors):
+        dia.add_sample(std, corr, label=label, color=color, marker='o', markersize=8)
+
+    # Add legend
+    fig.legend(
+        dia.sample_points, [p.get_label() for p in dia.sample_points],
+        loc="upper right", prop={'size': 'small'}, frameon=True
+    )
+
+    # Enhance plot aesthetics
+    plt.title(title, fontsize=16, weight='bold')
+    plt.tight_layout()
+
+    # Save the diagram
+    plt.savefig(output_file, dpi=300, format='tif', bbox_inches='tight')
+    plt.close(fig)
+
+
+# Input Data
+obs_std = 1.0935
+stds = [1.0288, 0.9137, 0.8331, 1.0262, 0.9616, 0.9355, 1.0413, 0.8805, 0.9366]
+corrs = [0.9525, 0.9048, 0.8304, 0.9595, 0.9336, 0.8952, 0.9593, 0.8969, 0.8770]
+labels = [
+    'RF-1Step', 'RF-2Steps', 'RF-3Steps',
+    'DL-1Step', 'DL-2Steps', 'DL-3Steps',
+    'SVR-1Step', 'SVR-2Steps', 'SVR-3Steps'
+]
+
+# Output File
+output_file = 'TaylorDiagram.tif'
+
+# Generate and Save Diagram
+plot_taylor_diagram(obs_std, stds, corrs, labels, output_file, title="Model Evaluation (Charlottetown)")
